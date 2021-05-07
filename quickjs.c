@@ -255,11 +255,10 @@ struct JSRuntime {
     int class_count;    /* size of class_array */
     JSClass *class_array; // *AIRING: 记录类的数组
 
-    // *AIRING: 用于 GC 的一些链表 list_head
-    struct list_head context_list; /* list of JSContext.link */
+    struct list_head context_list; /* list of JSContext.link */   // *AIRING: 记录所有的上下文
     /* list of JSGCObjectHeader.link. List of allocated GC objects (used
        by the garbage collector) */
-    struct list_head gc_obj_list;
+    struct list_head gc_obj_list; // *AIRING: 记录分配的 GC 对象
     /* list of JSGCObjectHeader.link. Used during JS_FreeValueRT() */
     struct list_head gc_zero_ref_count_list; 
     struct list_head tmp_obj_list; /* used during GC */
@@ -413,14 +412,15 @@ typedef enum {
 #define JS_INTERRUPT_COUNTER_INIT 10000
 
 struct JSContext {
-    JSGCObjectHeader header; /* must come first */
+    
+    JSGCObjectHeader header; /* must come first */ // *AIRING: GC 对象的 header
     JSRuntime *rt;
     struct list_head link;
 
-    uint16_t binary_object_count;
-    int binary_object_size;
+    uint16_t binary_object_count; // *AIRING: 对象的数量
+    int binary_object_size; // *AIRING: 对象的大小
 
-    JSShape *array_shape;   /* initial shape for Array objects */
+    JSShape *array_shape;   /* initial shape for Array objects */ // *AIRING: shape 的数组
 
     JSValue *class_proto;
     JSValue function_proto;
@@ -435,8 +435,8 @@ struct JSContext {
     JSValue throw_type_error;
     JSValue eval_obj;
 
-    JSValue global_obj; /* global object */
-    JSValue global_var_obj; /* contains the global let/const definitions */
+    JSValue global_obj; /* global object */ // *AIRING: 全局对象
+    JSValue global_var_obj; /* contains the global let/const definitions */ // *AIRING: 全局变量，包括全局 let/const 定义
 
     uint64_t random_state;
 #ifdef CONFIG_BIGNUM
@@ -890,6 +890,8 @@ struct JSObject {
     JSShape *shape; /* prototype and property names + flag */ // *AIRING: 原型和属性的名字
     JSProperty *prop; /* array of properties */ // *AIRING: 存属性的数组
     /* byte offsets: 24/40 */
+    // *AIRING: first_weak_ref 指向第一次使用这个对象做键的 WeakMap 地址
+    // *AIRING: WeakMap 键是弱引用的。其键必须是对象，而值可以是任意的。如果使用 Map 的话释放对象时还需要考虑 Map 对应键和值的删除，维护起来不方便，而使用 WeakMap，当对象在其他地方释放完后对应的 WeakMap 键值就会被自动清除掉。
     struct JSMapRecord *first_weak_ref; /* XXX: use a bit and an external hash table? */
     /* byte offsets: 28/48 */
     union {
@@ -1606,6 +1608,7 @@ JSRuntime *JS_NewRuntime2(const JSMallocFunctions *mf, void *opaque)
     JSRuntime *rt;
     JSMallocState ms;
 
+    // *AIRING: memset 一般是对比较大些的结构体进行初始化，因为是直接操作内存，所以很快
     memset(&ms, 0, sizeof(ms));
     ms.opaque = opaque;
     ms.malloc_limit = -1;
@@ -17286,8 +17289,14 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                 op1 = sp[-1];
                 pc += 4;
                 if ((uint32_t)JS_VALUE_GET_TAG(op1) <= JS_TAG_UNDEFINED) {
+                     // *AIRING: 可以直接从 JSValue 读出真正的 bool 值
                     res = JS_VALUE_GET_INT(op1);
                 } else {
+                    // *AIRING: 需要进一步判断
+                    // JS_TAG_UNINITIALIZED = 4,
+                    // JS_TAG_CATCH_OFFSET = 5,
+                    // JS_TAG_EXCEPTION   = 6,
+                    // JS_TAG_FLOAT64     = 7,
                     res = JS_ToBoolFree(ctx, op1);
                 }
                 sp--;
@@ -17924,6 +17933,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                 op2 = sp[-1];
                 if (likely(JS_VALUE_IS_BOTH_INT(op1, op2))) {
                     int64_t r;
+                    // *AIRING: 先切 int64 相加，加完之后再转回 int32 看看数值是否一致，如果不一致说明溢出了，就走 add_slow
                     r = (int64_t)JS_VALUE_GET_INT(op1) + JS_VALUE_GET_INT(op2);
                     if (unlikely((int)r != r))
                         goto add_slow;
@@ -19972,7 +19982,7 @@ typedef struct JSFunctionDef {
     BOOL has_use_strict; /* to reject directive in special cases */
     BOOL has_eval_call; /* true if the function contains a call to eval() */
     BOOL has_arguments_binding; /* true if the 'arguments' binding is
-                                   available in the function */
+                                   available in the function */ // *AIRING: 该函数是否有参数绑定（箭头函数）
     BOOL has_this_binding; /* true if the 'this' and new.target binding are
                               available in the function */
     BOOL new_target_allowed; /* true if the 'new.target' does not
@@ -28767,6 +28777,8 @@ static JSFunctionDef *js_new_function_def(JSContext *ctx,
     fd->scope_first = -1;
     fd->body_scope = -1;
 
+    // *AIRING: js_new_function_def 会通过运行 JS_NewAtom 函数，来返回一个文件名 JSAtom。
+    // *AIRING: JS_NewAtom -> JSNewAtomLen -> JS_NewAtomStr -> __JS_NewAtom
     fd->filename = JS_NewAtom(ctx, filename);
     fd->line_num = line_num;
 
@@ -33577,6 +33589,7 @@ static void skip_shebang(JSParseState *s)
     }
 }
 
+// *AIRING: JS_Eval -> JS_EvalThis -> JS_EvalInternal -> eval_internal(__JS_EvalInternal)
 /* 'input' must be zero terminated i.e. input[input_len] = '\0'. */
 static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
                                  const char *input, size_t input_len,
@@ -33584,17 +33597,17 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
 {
     JSParseState s1, *s = &s1;
     int err, js_mode, eval_type;
-    JSValue fun_obj, ret_val;
-    JSStackFrame *sf;
-    JSVarRef **var_refs;
-    JSFunctionBytecode *b;
-    JSFunctionDef *fd;
-    JSModuleDef *m;
+    JSValue fun_obj, ret_val; // *AIRING: 函数对象和返回值
+    JSStackFrame *sf; // *AIRING: 栈帧
+    JSVarRef **var_refs; // *AIRING: 变量指针
+    JSFunctionBytecode *b; // *AIRING: 函数字节码
+    JSFunctionDef *fd; // *AIRING: 函数
+    JSModuleDef *m; // *AIRING: 模块
 
     js_parse_init(ctx, s, input, input_len, filename);
-    skip_shebang(s);
+    skip_shebang(s); // *AIRING: 过滤 Shebang，Unix 脚本第一行 !#，其作用是告诉系统希望用什么解释器执行脚本
 
-    eval_type = flags & JS_EVAL_TYPE_MASK;
+    eval_type = flags & JS_EVAL_TYPE_MASK; // *AIRING: 获取 eval 的类型
     m = NULL;
     if (eval_type == JS_EVAL_TYPE_DIRECT) {
         JSObject *p;
