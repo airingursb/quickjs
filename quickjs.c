@@ -238,22 +238,24 @@ typedef struct {
 } JSNumericOperations;
 #endif
 
+// *AIRING: js 运行时，可以看做是 js 虚拟机环境，多个 JSRuntime 之间是隔离的，它们之间不能相互调用和通信
 struct JSRuntime {
-    JSMallocFunctions mf;
-    JSMallocState malloc_state;
+    JSMallocFunctions mf; // *AIRING: 内存分配函数
+    JSMallocState malloc_state;  // *AIRING: 内存分配状态
     const char *rt_info;
 
     int atom_hash_size; /* power of two */
     int atom_count;
-    int atom_size;
+    int atom_size; // *AIRING: 原子大小
     int atom_count_resize; /* resize hash table at this count */
     uint32_t *atom_hash;
-    JSAtomStruct **atom_array;
+    JSAtomStruct **atom_array; // *AIRING: 原子结构数组指针
     int atom_free_index; /* 0 = none */
 
     int class_count;    /* size of class_array */
-    JSClass *class_array;
+    JSClass *class_array; // *AIRING: 记录类的数组
 
+    // *AIRING: 用于 GC 的一些链表 list_head
     struct list_head context_list; /* list of JSContext.link */
     /* list of JSGCObjectHeader.link. List of allocated GC objects (used
        by the garbage collector) */
@@ -273,11 +275,11 @@ struct JSRuntime {
     
     JSValue current_exception;
     /* true if inside an out of memory error, to avoid recursing */
-    BOOL in_out_of_memory : 8;
+    BOOL in_out_of_memory : 8; // *AIRING: 避免重复出现内存超出错误的 in_out_of_memory 布尔值
 
-    struct JSStackFrame *current_stack_frame;
+    struct JSStackFrame *current_stack_frame; // *AIRING: 当前栈帧
 
-    JSInterruptHandler *interrupt_handler;
+    JSInterruptHandler *interrupt_handler; // *AIRING: 中断处理
     void *interrupt_opaque;
 
     JSHostPromiseRejectionTracker *host_promise_rejection_tracker;
@@ -286,7 +288,7 @@ struct JSRuntime {
     struct list_head job_list; /* list of JSJobEntry.link */
 
     JSModuleNormalizeFunc *module_normalize_func;
-    JSModuleLoaderFunc *module_loader_func;
+    JSModuleLoaderFunc *module_loader_func; // *AIRING: module 读取函数
     void *module_loader_opaque;
 
     BOOL can_block : 8; /* TRUE if Atomics.wait can block */
