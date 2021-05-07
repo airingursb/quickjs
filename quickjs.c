@@ -866,26 +866,29 @@ struct JSShape {
 };
 
 struct JSObject {
+    // *AIRING: union 里的字段会使用相同的内存，union 内存就是里面占用最多内存字段的内存。
+    // *AIRING: union 使用的内存覆盖方式，只能有一个字段的值，每次有新字段赋值都会覆盖先前的字段值。
+    // *AIRING: 此 union 为引用计数相关
     union {
         JSGCObjectHeader header;
         struct {
-            int __gc_ref_count; /* corresponds to header.ref_count */
-            uint8_t __gc_mark; /* corresponds to header.mark/gc_obj_type */
+            int __gc_ref_count; /* corresponds to header.ref_count */ // *AIRING: 用来计数
+            uint8_t __gc_mark; /* corresponds to header.mark/gc_obj_type */ // *AIRING: 用来描述当前 GC 的信息，值为 JSGCObjectTypeEnum 枚举
             
-            uint8_t extensible : 1;
+            uint8_t extensible : 1; // *AIRING: 表示对象能否扩展
             uint8_t free_mark : 1; /* only used when freeing objects with cycles */
-            uint8_t is_exotic : 1; /* TRUE if object has exotic property handlers */
+            uint8_t is_exotic : 1; /* TRUE if object has exotic property handlers */ // *AIRING: 表示对象是否为 exotic 对象，es 规范里定义只要不是普通的对象都是 exotic 对象，比如数组创建的实例就是 exotic 对象。
             uint8_t fast_array : 1; /* TRUE if u.array is used for get/put (for JS_CLASS_ARRAY, JS_CLASS_ARGUMENTS and typed arrays) */
-            uint8_t is_constructor : 1; /* TRUE if object is a constructor function */
-            uint8_t is_uncatchable_error : 1; /* if TRUE, error is not catchable */
+            uint8_t is_constructor : 1; /* TRUE if object is a constructor function */  // *AIRING: 对象是否是构造函数
+            uint8_t is_uncatchable_error : 1; /* if TRUE, error is not catchable */  // *AIRING: 对象的错误是否可以捕获
             uint8_t tmp_mark : 1; /* used in JS_WriteObjectRec() */
             uint8_t is_HTMLDDA : 1; /* specific annex B IsHtmlDDA behavior */
-            uint16_t class_id; /* see JS_CLASS_x */
+            uint16_t class_id; /* see JS_CLASS_x */  // *AIRING: JS_CLASS 打头的枚举值，这些枚举值定义了类的类型。
         };
     };
     /* byte offsets: 16/24 */
-    JSShape *shape; /* prototype and property names + flag */
-    JSProperty *prop; /* array of properties */
+    JSShape *shape; /* prototype and property names + flag */ // *AIRING: 原型和属性的名字
+    JSProperty *prop; /* array of properties */ // *AIRING: 存属性的数组
     /* byte offsets: 24/40 */
     struct JSMapRecord *first_weak_ref; /* XXX: use a bit and an external hash table? */
     /* byte offsets: 28/48 */
